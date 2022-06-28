@@ -1,4 +1,6 @@
-#pragma once
+/*#pragma once*/
+#ifndef ENCODE_HPP
+#define ENCODE_HPP
 
 #include "common.hpp"
 #include "encode_scalar.hpp"
@@ -23,3 +25,4 @@ size_t encode(Int16T const* in, uint8_t* SVB_RESTRICT out, uint32_t count, Int16
 }
 
 }  // namespace svb16
+#endif /* encode.hpp */
