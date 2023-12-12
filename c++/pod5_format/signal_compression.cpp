@@ -10,7 +10,6 @@
 
 /*namespace pod5 {*/
 
-<<<<<<< HEAD
 size_t compressed_signal_max_size(size_t sample_count) {
     const uint32_t max_svb_size = svb16_max_encoded_length(sample_count);
     const size_t zstd_compressed_max_size = ZSTD_compressBound(max_svb_size);
