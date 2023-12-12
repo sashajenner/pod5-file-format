@@ -8,42 +8,33 @@ set(CMAKE_PROJECT_VERSION ${POD5_NUMERIC_VERSION})
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake")
 
+# use compiler cache if available
+option(DISABLE_CCACHE "Do not try to use ccache to speed compilation" NO)
+if (NOT DISABLE_CCACHE)
+    find_program(CCACHE_EXECUTABLE ccache
+        HINTS "C:/Program\ Files/ccache/"
+        )
+    if (CCACHE_EXECUTABLE)
+        message(STATUS "Using ccache: ${CCACHE_EXECUTABLE}")
+        set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_EXECUTABLE}")
+        set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_EXECUTABLE}")
+    endif()
+endif()
+
 if (NOT DEFINED ENABLE_CONAN)
     option(ENABLE_CONAN "Enable conan for dependency installation" OFF)
 endif()
 option(BUILD_SHARED_LIB "Build a shared library" OFF)
 option(INSTALL_THIRD_PARTY "Install third party libraries" ON)
 
-option(POD5_DISABLE_TESTS "Disable building all tests" ON)
-option(POD5_BUILD_EXAMPLES "Disable building all examples" ON)
+option(POD5_DISABLE_TESTS "Disable building all tests" OFF)
+option(POD5_BUILD_EXAMPLES "Enable building all examples" ON)
 
 if (NOT DEFINED ENABLE_POD5_PACKAGING)
     option(ENABLE_POD5_PACKAGING "Enable packaging support" ON)
 endif()
 
 option(BUILD_PYTHON_WHEEL "Build a python wheel for pod5" ON)
-
-# FIXME: DISABLE CONDITIONAL TO WORK ON BIONIC
-if (ENABLE_CONAN AND CMAKE_COMPILER_IS_GNUCXX AND
-        CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "9.0" AND
-        CMAKE_CXX_COMPILER_VERSION VERSION_LESS "10.0")
-    # We build POD5 on CentOS 7 in CI, where we have GCC 9 but only the pre-C++11 ABI
-    # See https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
-    # This forces GCC 9 on other platforms (eg: Ubuntu Focal) to use the same ABI.
-    # The main gain here is being able to use the same conan packages.
-    add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=0)
-endif()
-
-# Enable finding conan modules:
-set(CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}")
-include_directories("third_party/include")
-
-foreach (config "Release" "Debug")
-    string(TOUPPER "${config}" config_upper)
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_BINARY_DIR}/${config}/lib)
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_BINARY_DIR}/${config}/lib)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_BINARY_DIR}/${config}/bin)
-endforeach()
 
 # debug symbols don't depend on the build type, only on this option
 option(DISABLE_DEBUG_SYMBOLS "Force debug symbols to be disabled" OFF)
@@ -64,6 +55,27 @@ if (NOT DISABLE_DEBUG_SYMBOLS)
     endif()
 endif()
 
+
+# FIXME: DISABLE CONDITIONAL TO WORK ON BIONIC
+if (ENABLE_CONAN AND CMAKE_COMPILER_IS_GNUCXX AND
+        CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "9.0" AND
+        CMAKE_CXX_COMPILER_VERSION VERSION_LESS "10.0")
+    # We build POD5 on CentOS 7 in CI, where we have GCC 9 but only the pre-C++11 ABI
+    # See https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
+    # This forces GCC 9 on other platforms (eg: Ubuntu Focal) to use the same ABI.
+    # The main gain here is being able to use the same conan packages.
+    add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=0)
+endif()
+
+include_directories("third_party/include")
+
+foreach (config "Release" "Debug")
+    string(TOUPPER "${config}" config_upper)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_BINARY_DIR}/${config}/lib)
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_BINARY_DIR}/${config}/lib)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_upper} ${CMAKE_BINARY_DIR}/${config}/bin)
+endforeach()
+
 set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "archive")
 
 include(GenerateExportHeader)
@@ -73,8 +85,6 @@ enable_testing()
 if (BUILD_PYTHON_WHEEL)
     find_package (Python ${PYTHON_VERSION} EXACT COMPONENTS Interpreter Development)
     add_subdirectory(third_party/pybind11)
-    
-    add_subdirectory(python)
 endif()
 
 add_subdirectory(c++)

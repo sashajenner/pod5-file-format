@@ -2,6 +2,7 @@
 
 #include "pod5_format/pod5_format_export.h"
 #include "pod5_format/result.h"
+#include "pod5_format/signal_builder.h"
 #include "pod5_format/signal_table_schema.h"
 
 #include <arrow/io/type_fwd.h>
@@ -11,9 +12,11 @@
 
 namespace arrow {
 class Schema;
+
 namespace io {
 class OutputStream;
 }
+
 namespace ipc {
 class RecordBatchWriter;
 }
@@ -21,38 +24,32 @@ class RecordBatchWriter;
 
 namespace pod5 {
 
-struct UncompressedSignalBuilder {
-    std::shared_ptr<arrow::Int16Builder> signal_data_builder;
-    std::unique_ptr<arrow::LargeListBuilder> signal_builder;
-};
-
-struct VbzSignalBuilder {
-    std::shared_ptr<arrow::LargeBinaryBuilder> signal_builder;
-};
-
 class POD5_FORMAT_EXPORT SignalTableWriter {
 public:
-    using SignalBuilderVariant = boost::variant<UncompressedSignalBuilder, VbzSignalBuilder>;
-
-    SignalTableWriter(std::shared_ptr<arrow::ipc::RecordBatchWriter>&& writer,
-                      std::shared_ptr<arrow::Schema>&& schema,
-                      SignalBuilderVariant&& signal_builder,
-                      SignalTableSchemaDescription const& field_locations,
-                      std::size_t table_batch_size,
-                      arrow::MemoryPool* pool);
-    SignalTableWriter(SignalTableWriter&&);
-    SignalTableWriter& operator=(SignalTableWriter&&);
-    SignalTableWriter(SignalTableWriter const&) = delete;
-    SignalTableWriter& operator=(SignalTableWriter const&) = delete;
+    SignalTableWriter(
+        std::shared_ptr<arrow::ipc::RecordBatchWriter> && writer,
+        std::shared_ptr<arrow::Schema> && schema,
+        SignalBuilderVariant && signal_builder,
+        SignalTableSchemaDescription const & field_locations,
+        std::shared_ptr<arrow::io::OutputStream> const & output_stream,
+        std::size_t table_batch_size,
+        arrow::MemoryPool * pool);
+    SignalTableWriter(SignalTableWriter &&);
+    SignalTableWriter & operator=(SignalTableWriter &&);
+    SignalTableWriter(SignalTableWriter const &) = delete;
+    SignalTableWriter & operator=(SignalTableWriter const &) = delete;
     ~SignalTableWriter();
 
+    /// \brief Find the size of table batches for the signal table writer.
+    std::size_t table_batch_size() const { return m_table_batch_size; }
+
     /// \brief Add a read to the signal table, adding to the current batch.
-    ///        The batch is not flushed to disk until #flush is called.
     /// \param read_id The read id for the read entry
     /// \param signal The signal for the read entry
     /// \returns The row index of the inserted signal, or a status on failure.
-    Result<std::size_t> add_signal(boost::uuids::uuid const& read_id,
-                                   gsl::span<std::int16_t const> const& signal);
+    Result<SignalTableRowIndex> add_signal(
+        boost::uuids::uuid const & read_id,
+        gsl::span<std::int16_t const> const & signal);
 
     /// \brief Add a pre-compressed read to the signal table, adding to the current batch.
     ///        The batch is not flushed to disk until #flush is called.
@@ -63,9 +60,15 @@ public:
     /// \param read_id The read id for the read entry
     /// \param signal The signal for the read entry
     /// \returns The row index of the inserted signal, or a status on failure.
-    Result<std::size_t> add_pre_compressed_signal(boost::uuids::uuid const& read_id,
-                                                  gsl::span<std::uint8_t const> const& signal,
-                                                  std::uint32_t sample_count);
+    Result<SignalTableRowIndex> add_pre_compressed_signal(
+        boost::uuids::uuid const & read_id,
+        gsl::span<std::uint8_t const> const & signal,
+        std::uint32_t sample_count);
+
+    pod5::Result<std::pair<SignalTableRowIndex, SignalTableRowIndex>> add_signal_batch(
+        std::size_t row_count,
+        std::vector<std::shared_ptr<arrow::Array>> && columns,
+        bool final_batch);
 
     /// \brief Close this writer, signaling no further data will be written to the writer.
     Status close();
@@ -76,13 +79,20 @@ public:
     /// \brief Reserve space for future row writes, called automatically when a flush occurs.
     Status reserve_rows();
 
+    /// \brief Find the schema for the signal table
+    std::shared_ptr<arrow::Schema> const & schema() const { return m_schema; }
+
+    /// \brief Flush passed data into the writer as a record batch.
+    Status write_batch(arrow::RecordBatch const &);
+
 private:
     /// \brief Flush buffered data into the writer as a record batch.
     Status write_batch();
 
-    arrow::MemoryPool* m_pool = nullptr;
+    arrow::MemoryPool * m_pool = nullptr;
     std::shared_ptr<arrow::Schema> m_schema;
     SignalTableSchemaDescription m_field_locations;
+    std::shared_ptr<arrow::io::OutputStream> m_output_stream;
     std::size_t m_table_batch_size;
 
     std::shared_ptr<arrow::ipc::RecordBatchWriter> m_writer;
@@ -102,10 +112,10 @@ private:
 /// \param pool Pool to be used for building table in memory.
 /// \returns The writer for the new table.
 POD5_FORMAT_EXPORT Result<SignalTableWriter> make_signal_table_writer(
-        std::shared_ptr<arrow::io::OutputStream> const& sink,
-        std::shared_ptr<const arrow::KeyValueMetadata> const& metadata,
-        std::size_t table_batch_size,
-        SignalType compression_type,
-        arrow::MemoryPool* pool);
+    std::shared_ptr<arrow::io::OutputStream> const & sink,
+    std::shared_ptr<const arrow::KeyValueMetadata> const & metadata,
+    std::size_t table_batch_size,
+    SignalType compression_type,
+    arrow::MemoryPool * pool);
 
 }  // namespace pod5

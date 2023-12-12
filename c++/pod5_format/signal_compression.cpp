@@ -10,6 +10,7 @@
 
 /*namespace pod5 {*/
 
+<<<<<<< HEAD
 size_t compressed_signal_max_size(size_t sample_count) {
     const uint32_t max_svb_size = svb16_max_encoded_length(sample_count);
     const size_t zstd_compressed_max_size = ZSTD_compressBound(max_svb_size);
@@ -61,12 +62,12 @@ uint8_t *compress_signal(
 /*
 arrow::Result<std::shared_ptr<arrow::Buffer>> compress_signal(const int16_t *samples) {
     ARROW_ASSIGN_OR_RAISE(
-            std::shared_ptr<arrow::ResizableBuffer> out,
-            arrow::AllocateResizableBuffer(compressed_signal_max_size(samples.size()), pool));
+        std::shared_ptr<arrow::ResizableBuffer> out,
+        arrow::AllocateResizableBuffer(compressed_signal_max_size(samples.size()), pool));
 
     ARROW_ASSIGN_OR_RAISE(
-            auto final_size,
-            compress_signal(samples, pool, gsl::make_span(out->mutable_data(), out->size())));
+        auto final_size,
+        compress_signal(samples, pool, gsl::make_span(out->mutable_data(), out->size())));
 
     ARROW_RETURN_NOT_OK(out->Resize(final_size));
     return out;

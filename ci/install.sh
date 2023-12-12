@@ -1,12 +1,9 @@
 #!/bin/bash
 
-output_sku=$1
-auditwheel_platform=$2
-
-CURRENT_DIR=$(pwd)
-
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-REPO_ROOT="${SCRIPT_DIR}/../"
+set -o errexit
+set -o pipefail
+set -o nounset
+# set -o xtrace
 
 # Tar up the archive build:
 (
