@@ -8,12 +8,10 @@
 #include "simd_detect_x64.hpp"
 #endif
 
-namespace svb16 {
-
 // Required extra space after readable buffers passed in.
 //
 // Require 1 128 bit buffer beyond the end of all input readable buffers.
-inline std::size_t decode_input_buffer_padding_byte_count()
+inline size_t decode_input_buffer_padding_byte_count()
 {
 #ifdef SVB16_X64
     return sizeof(__m128i);
@@ -22,18 +20,16 @@ inline std::size_t decode_input_buffer_padding_byte_count()
 #endif
 }
 
-template <typename Int16T, bool UseDelta, bool UseZigzag>
-size_t decode(gsl::span<Int16T> out, gsl::span<uint8_t const> in, Int16T prev = 0)
+size_t decode(bool UseDelta, bool UseZigzag, int16_t *out, uint32_t out_size, uint8_t const *in, uint64_t in_size, int16_t prev)
 {
-    auto keys_length = ::svb16_key_length(out.size());
-    auto const keys = in.subspan(0, keys_length);
-    auto const data = in.subspan(keys_length);
+    uint32_t keys_length = svb16_key_length(out_size);
+    uint64_t data_size = in_size - keys_length;
+    uint8_t const *keys = in;
+    uint8_t const *data = in + keys_length;
 #ifdef SVB16_X64
     if (has_sse4_1()) {
-        return decode_sse<Int16T, UseDelta, UseZigzag>(out, keys, data, prev) - in.begin();
+        return decode_sse(UseDelta, UseZigzag, out, out_size, keys, keys_length, data, data_size, prev) - in;
     }
 #endif
-    return decode_scalar<Int16T, UseDelta, UseZigzag>(out, keys, data, prev) - in.begin();
+    return decode_scalar(UseDelta, UseZigzag, out, out_size, keys, keys_length, data, data_size, prev) - in;
 }
-
-}  // namespace svb16

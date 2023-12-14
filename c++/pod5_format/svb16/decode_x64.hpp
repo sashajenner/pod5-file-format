@@ -6,16 +6,13 @@
 #include "shuffle_tables.hpp"
 #include "svb16.h"  // svb16_key_length
 
-#include <gsl/gsl-lite.hpp>
-
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 #ifdef SVB16_X64
 
-namespace svb16 {
-namespace detail {
-[[gnu::target("ssse3")]] inline __m128i zigzag_decode(__m128i val)
+__attribute__ ((__target__ ("ssse3")))
+inline __m128i zigzag_decode_x64(__m128i val)
 {
     return _mm_xor_si128(
         // N >> 1
@@ -26,11 +23,12 @@ namespace detail {
     );
 }
 
-[[gnu::target("ssse3")]] inline __m128i unpack(uint32_t key, uint8_t const * SVB_RESTRICT * data)
+__attribute__ ((__target__ ("ssse3")))
+static inline __m128i unpack(uint32_t key, uint8_t const * SVB_RESTRICT * data)
 {
-    auto const len = static_cast<uint8_t>(8 + svb16_popcount(key));
-    __m128i data_reg = _mm_loadu_si128(reinterpret_cast<__m128i const *>(*data));
-    __m128i const shuffle = *reinterpret_cast<__m128i const *>(&g_decode_shuffle_table[key]);
+    uint8_t const len = (uint8_t)(8 + svb16_popcount(key));
+    __m128i data_reg = _mm_loadu_si128((__m128i const *)(*data));
+    __m128i const shuffle = *(__m128i const *)(&g_decode_shuffle_table[key]);
 
     data_reg = _mm_shuffle_epi8(data_reg, shuffle);
     *data += len;
@@ -38,14 +36,14 @@ namespace detail {
     return data_reg;
 }
 
-template <typename Int16T, bool UseDelta, bool UseZigzag>
-[[gnu::target("ssse3")]] inline void store_8(Int16T * to, __m128i value, __m128i * prev)
+__attribute__ ((__target__ ("ssse3")))
+static inline void store_8(bool UseDelta, bool UseZigzag, int16_t * to, __m128i value, __m128i * prev)
 {
-    SVB16_IF_CONSTEXPR(UseZigzag) { value = zigzag_decode(value); }
+    SVB16_IF_CONSTEXPR(UseZigzag) { value = zigzag_decode_x64(value); }
 
     SVB16_IF_CONSTEXPR(UseDelta)
     {
-        auto const broadcast_last_16 =
+        __m128i const broadcast_last_16 =
             m128i_from_bytes(14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15);
         // value == [A B C D E F G H] (16 bit values)
         __m128i add = _mm_slli_si128(value, 2);
@@ -67,37 +65,36 @@ template <typename Int16T, bool UseDelta, bool UseZigzag>
         *prev = value;
     }
 
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(to), value);
+    _mm_storeu_si128((__m128i *)(to), value);
 }
-}  // namespace detail
 
-template <typename Int16T, bool UseDelta, bool UseZigzag>
-[[gnu::target("sse4.1")]] uint8_t const * decode_sse(
-    gsl::span<Int16T> out_span,
-    gsl::span<uint8_t const> keys_span,
-    gsl::span<uint8_t const> data_span,
-    Int16T prev = 0)
+__attribute__ ((__target__ ("sse4.1")))
+uint8_t const * decode_sse(bool UseDelta, bool UseZigzag,
+    int16_t *out_span,
+    uint32_t const out_span_count,
+    uint8_t const *keys_span,
+    uint32_t const keys_span_count,
+    uint8_t const *data_span,
+    uint64_t const data_span_count,
+    int16_t prev)
 {
-    auto store_8 = [](Int16T * to, __m128i value, __m128i * prev) {
-        detail::store_8<Int16T, UseDelta, UseZigzag>(to, value, prev);
-    };
     // this code treats all input as uint16_t (except the zigzag code, which treats it as int16_t)
     // this isn't a problem, as the scalar code does the same
 
-    auto out = out_span.begin();
-    auto const count = out_span.size();
-    auto keys_it = keys_span.begin();
-    auto data = data_span.begin();
+    int16_t *out = out_span;
+    uint32_t const count = out_span_count;
+    uint8_t const *keys_it = keys_span;
+    uint8_t const *data = data_span;
 
     // handle blocks of 32 values
     if (count >= 64) {
-        size_t const key_bytes = count / 8;
+        uint32_t const key_bytes = count / 8;
 
         __m128i prev_reg;
         SVB16_IF_CONSTEXPR(UseDelta) { prev_reg = _mm_set1_epi16(prev); }
 
-        int64_t offset = -static_cast<int64_t>(key_bytes) / 8 + 1;  // 8 -> 4?
-        uint64_t const * keyPtr64 = reinterpret_cast<uint64_t const *>(keys_it) - offset;
+        int64_t offset = -(int64_t)(key_bytes) / 8 + 1;  // 8 -> 4?
+        uint64_t const * keyPtr64 = (uint64_t const *)(keys_it) - offset;
         uint64_t nextkeys;
         memcpy(&nextkeys, keyPtr64 + offset, sizeof(nextkeys));
 
@@ -111,54 +108,54 @@ template <typename Int16T, bool UseDelta, bool UseZigzag>
 
                 // _mm_cvtepu8_epi16: SSE4.1
                 data_reg =
-                    _mm_cvtepu8_epi16(_mm_lddqu_si128(reinterpret_cast<__m128i const *>(data)));
-                store_8(out, data_reg, &prev_reg);
+                    _mm_cvtepu8_epi16(_mm_lddqu_si128((__m128i const *)(data)));
+                store_8(UseDelta, UseZigzag, out, data_reg, &prev_reg);
                 data_reg =
-                    _mm_cvtepu8_epi16(_mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 8)));
-                store_8(out + 8, data_reg, &prev_reg);
+                    _mm_cvtepu8_epi16(_mm_lddqu_si128((__m128i const *)(data + 8)));
+                store_8(UseDelta, UseZigzag, out + 8, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 16)));
-                store_8(out + 16, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + 16)));
+                store_8(UseDelta, UseZigzag, out + 16, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 24)));
-                store_8(out + 24, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + 24)));
+                store_8(UseDelta, UseZigzag, out + 24, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 32)));
-                store_8(out + 32, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + 32)));
+                store_8(UseDelta, UseZigzag, out + 32, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + +40)));
-                store_8(out + 40, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + +40)));
+                store_8(UseDelta, UseZigzag, out + 40, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 48)));
-                store_8(out + 48, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + 48)));
+                store_8(UseDelta, UseZigzag, out + 48, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 56)));
-                store_8(out + 56, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + 56)));
+                store_8(UseDelta, UseZigzag, out + 56, data_reg, &prev_reg);
                 out += 64;
                 data += 64;
                 continue;
             }
 
-            data_reg = detail::unpack(keys & 0x00FF, &data);
-            store_8(out, data_reg, &prev_reg);
-            data_reg = detail::unpack((keys & 0xFF00) >> 8, &data);
-            store_8(out + 8, data_reg, &prev_reg);
+            data_reg = unpack(keys & 0x00FF, &data);
+            store_8(UseDelta, UseZigzag, out, data_reg, &prev_reg);
+            data_reg = unpack((keys & 0xFF00) >> 8, &data);
+            store_8(UseDelta, UseZigzag, out + 8, data_reg, &prev_reg);
 
             keys >>= 16;
-            data_reg = detail::unpack((keys & 0x00FF), &data);
-            store_8(out + 16, data_reg, &prev_reg);
-            data_reg = detail::unpack((keys & 0xFF00) >> 8, &data);
-            store_8(out + 24, data_reg, &prev_reg);
+            data_reg = unpack((keys & 0x00FF), &data);
+            store_8(UseDelta, UseZigzag, out + 16, data_reg, &prev_reg);
+            data_reg = unpack((keys & 0xFF00) >> 8, &data);
+            store_8(UseDelta, UseZigzag, out + 24, data_reg, &prev_reg);
 
             keys >>= 16;
-            data_reg = detail::unpack((keys & 0x00FF), &data);
-            store_8(out + 32, data_reg, &prev_reg);
-            data_reg = detail::unpack((keys & 0xFF00) >> 8, &data);
-            store_8(out + 40, data_reg, &prev_reg);
+            data_reg = unpack((keys & 0x00FF), &data);
+            store_8(UseDelta, UseZigzag, out + 32, data_reg, &prev_reg);
+            data_reg = unpack((keys & 0xFF00) >> 8, &data);
+            store_8(UseDelta, UseZigzag, out + 40, data_reg, &prev_reg);
 
             keys >>= 16;
-            data_reg = detail::unpack((keys & 0x00FF), &data);
-            store_8(out + 48, data_reg, &prev_reg);
+            data_reg = unpack((keys & 0x00FF), &data);
+            store_8(UseDelta, UseZigzag, out + 48, data_reg, &prev_reg);
 
             // Note we load at least sizeof(__m128i) bytes from the end of data
             // here, need to ensure that is available to read.
@@ -167,8 +164,8 @@ template <typename Int16T, bool UseDelta, bool UseZigzag>
             //
             // This is ok due to `decode_input_buffer_padding_byte_count` enuring
             // extra space on the input buffer.
-            data_reg = detail::unpack((keys & 0xFF00) >> 8, &data);
-            store_8(out + 56, data_reg, &prev_reg);
+            data_reg = unpack((keys & 0xFF00) >> 8, &data);
+            store_8(UseDelta, UseZigzag, out + 56, data_reg, &prev_reg);
 
             out += 64;
         }
@@ -177,56 +174,56 @@ template <typename Int16T, bool UseDelta, bool UseZigzag>
             // faster 16-bit delta since we only have 8-bit values
             if (!keys) {  // 64 1-byte ints in a row
                 data_reg =
-                    _mm_cvtepu8_epi16(_mm_lddqu_si128(reinterpret_cast<__m128i const *>(data)));
-                store_8(out, data_reg, &prev_reg);
+                    _mm_cvtepu8_epi16(_mm_lddqu_si128((__m128i const *)(data)));
+                store_8(UseDelta, UseZigzag, out, data_reg, &prev_reg);
                 data_reg =
-                    _mm_cvtepu8_epi16(_mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 8)));
-                store_8(out + 8, data_reg, &prev_reg);
+                    _mm_cvtepu8_epi16(_mm_lddqu_si128((__m128i const *)(data + 8)));
+                store_8(UseDelta, UseZigzag, out + 8, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 16)));
-                store_8(out + 16, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + 16)));
+                store_8(UseDelta, UseZigzag, out + 16, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 24)));
-                store_8(out + 24, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + 24)));
+                store_8(UseDelta, UseZigzag, out + 24, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 32)));
-                store_8(out + 32, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + 32)));
+                store_8(UseDelta, UseZigzag, out + 32, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + +40)));
-                store_8(out + 40, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + +40)));
+                store_8(UseDelta, UseZigzag, out + 40, data_reg, &prev_reg);
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_lddqu_si128(reinterpret_cast<__m128i const *>(data + 48)));
-                store_8(out + 48, data_reg, &prev_reg);
+                    _mm_lddqu_si128((__m128i const *)(data + 48)));
+                store_8(UseDelta, UseZigzag, out + 48, data_reg, &prev_reg);
                 // Only load the first 8 bytes here, otherwise we may run off the end of the buffer
                 data_reg = _mm_cvtepu8_epi16(
-                    _mm_loadl_epi64(reinterpret_cast<__m128i const *>(data + 56)));
-                store_8(out + 56, data_reg, &prev_reg);
+                    _mm_loadl_epi64((__m128i const *)(data + 56)));
+                store_8(UseDelta, UseZigzag, out + 56, data_reg, &prev_reg);
                 out += 64;
                 data += 64;
 
             } else {
-                data_reg = detail::unpack(keys & 0x00FF, &data);
-                store_8(out, data_reg, &prev_reg);
-                data_reg = detail::unpack((keys & 0xFF00) >> 8, &data);
-                store_8(out + 8, data_reg, &prev_reg);
+                data_reg = unpack(keys & 0x00FF, &data);
+                store_8(UseDelta, UseZigzag, out, data_reg, &prev_reg);
+                data_reg = unpack((keys & 0xFF00) >> 8, &data);
+                store_8(UseDelta, UseZigzag, out + 8, data_reg, &prev_reg);
 
                 keys >>= 16;
-                data_reg = detail::unpack((keys & 0x00FF), &data);
-                store_8(out + 16, data_reg, &prev_reg);
-                data_reg = detail::unpack((keys & 0xFF00) >> 8, &data);
-                store_8(out + 24, data_reg, &prev_reg);
+                data_reg = unpack((keys & 0x00FF), &data);
+                store_8(UseDelta, UseZigzag, out + 16, data_reg, &prev_reg);
+                data_reg = unpack((keys & 0xFF00) >> 8, &data);
+                store_8(UseDelta, UseZigzag, out + 24, data_reg, &prev_reg);
 
                 keys >>= 16;
-                data_reg = detail::unpack((keys & 0x00FF), &data);
-                store_8(out + 32, data_reg, &prev_reg);
-                data_reg = detail::unpack((keys & 0xFF00) >> 8, &data);
-                store_8(out + 40, data_reg, &prev_reg);
+                data_reg = unpack((keys & 0x00FF), &data);
+                store_8(UseDelta, UseZigzag, out + 32, data_reg, &prev_reg);
+                data_reg = unpack((keys & 0xFF00) >> 8, &data);
+                store_8(UseDelta, UseZigzag, out + 40, data_reg, &prev_reg);
 
                 keys >>= 16;
-                data_reg = detail::unpack((keys & 0x00FF), &data);
-                store_8(out + 48, data_reg, &prev_reg);
-                data_reg = detail::unpack((keys & 0xFF00) >> 8, &data);
-                store_8(out + 56, data_reg, &prev_reg);
+                data_reg = unpack((keys & 0x00FF), &data);
+                store_8(UseDelta, UseZigzag, out + 48, data_reg, &prev_reg);
+                data_reg = unpack((keys & 0xFF00) >> 8, &data);
+                store_8(UseDelta, UseZigzag, out + 56, data_reg, &prev_reg);
 
                 out += 64;
             }
@@ -236,20 +233,18 @@ template <typename Int16T, bool UseDelta, bool UseZigzag>
         keys_it += key_bytes - (key_bytes & 7);
     }
 
-    assert(out <= out_span.end());
-    assert(keys_it <= keys_span.end());
-    assert(data <= data_span.end());
+    assert(out <= out_span + out_span_count);
+    assert(keys_it <= keys_span + keys_span_count);
+    assert(data <= data_span + data_span_count);
 
-    auto out_scalar_span = gsl::make_span(out, out_span.end());
-    assert(out_scalar_span.size() == (count & 63));
+    assert(out_span + out_span_count - out == (count & 63));
 
-    auto keys_scalar_span = gsl::make_span(keys_it, keys_span.end());
-    auto data_scalar_span = gsl::make_span(data, data_span.end());
+    uint32_t const out_scalar_count = out_span_count - (out - out_span);
+    uint32_t const keys_scalar_count = keys_span_count - (keys_it - keys_span);
+    uint64_t const data_scalar_count = data_span_count - (data - data_span);
 
-    return decode_scalar<Int16T, UseDelta, UseZigzag>(
-        out_scalar_span, keys_scalar_span, data_scalar_span, prev);
+    return decode_scalar(UseDelta, UseZigzag,
+        out, out_scalar_count, keys_it, keys_scalar_count, data, data_scalar_count, prev);
 }
 
 #endif  // SVB16_X64
-
-}  // namespace svb16

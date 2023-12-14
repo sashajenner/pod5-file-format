@@ -29,7 +29,8 @@ def decode_table_row(control):
 
 
 def print_x64_encode_table():
-    print("static constexpr uint8_t g_encode_shuffle_table[128*16] = {")
+    #print("static constexpr uint8_t g_encode_shuffle_table[128*16] = {")
+    print("static const uint8_t g_encode_shuffle_table[128*16] = {")
     for i in range(128):
         table = encode_table_row(i)
         print("\t", ", ".join(f"0x{v:02X}" for v in table), ",", sep="")
@@ -47,7 +48,7 @@ def print_x64_decode_table():
 if __name__ == "__main__":
     print("#pragma once")
     print('#include "common.hpp" // arch macros')
-    print("#include <cstdint>")
+    print("#include <stdint.h>")
     print()
     print("#ifdef SVB16_X64")
     print_x64_encode_table()

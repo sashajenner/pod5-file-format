@@ -10,10 +10,10 @@
 #include <arm_neon.h>
 #endif
 
-#include <cstdint>
+#include <stdint.h>
 
-namespace svb16 { namespace detail {
-[[gnu::target("sse2")]] inline constexpr __m128i m128i_from_bytes(
+__attribute__ ((__target__ ("sse2")))
+static inline const __m128i m128i_from_bytes(
     uint8_t a,
     uint8_t b,
     uint8_t c,
@@ -50,15 +50,19 @@ namespace svb16 { namespace detail {
         (char)o,
         (char)p};
 #else
+    /*
     return __m128i{
-        static_cast<int64_t>(static_cast<uint64_t>(h) << 56) + (static_cast<int64_t>(g) << 48)
-            + (static_cast<int64_t>(f) << 40) + (static_cast<int64_t>(e) << 32)
-            + (static_cast<int64_t>(d) << 24) + (static_cast<int64_t>(c) << 16)
-            + (static_cast<int64_t>(b) << 8) + static_cast<int64_t>(a),
-        static_cast<int64_t>(static_cast<uint64_t>(h) << 56) + (static_cast<int64_t>(g) << 48)
-            + (static_cast<int64_t>(f) << 40) + (static_cast<int64_t>(e) << 32)
-            + (static_cast<int64_t>(d) << 24) + (static_cast<int64_t>(c) << 16)
-            + (static_cast<int64_t>(b) << 8) + static_cast<int64_t>(a)};
+        (int64_t)((uint64_t)(h) << 56) + ((int64_t)(g) << 48)
+            + ((int64_t)(f) << 40) + ((int64_t)(e) << 32)
+            + ((int64_t)(d) << 24) + ((int64_t)(c) << 16)
+            + ((int64_t)(b) << 8) + (int64_t)(a),
+        (int64_t)((uint64_t)(h) << 56) + ((int64_t)(g) << 48)
+            + ((int64_t)(f) << 40) + ((int64_t)(e) << 32)
+            + ((int64_t)(d) << 24) + ((int64_t)(c) << 16)
+            + ((int64_t)(b) << 8) + (int64_t)(a)};
+    */
+    /* I'm not sure this is equivalent, but it seems to work. */
+    uint8_t buf[16] = {a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p};
+    return _mm_load_si128((__m128i *) buf);
 #endif
 }
-}}  // namespace svb16::detail

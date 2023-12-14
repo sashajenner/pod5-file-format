@@ -11,9 +11,9 @@
 // __AVX__ is documented for MSVC, but __SSE4_1__ isn't
 #if defined(__AVX__) || defined(__SSE4_1__)
 
-inline constexpr bool has_ssse3() { return true; }
+inline const bool has_ssse3() { return true; }
 
-inline constexpr bool has_sse4_1() { return true; }
+inline const bool has_sse4_1() { return true; }
 
 #else
 
@@ -24,19 +24,20 @@ struct CpuidResult {
     unsigned int edx;
 };
 
-inline CpuidResult cpuid(unsigned int leaf, unsigned int subleaf)
+inline struct CpuidResult cpuid(unsigned int leaf, unsigned int subleaf)
 {
 #ifdef _MSC_VER
     int info[4];
-    __cpuidex(info, static_cast<int>(leaf), static_cast<int>(subleaf));
-    return CpuidResult{
-        static_cast<unsigned int>(info[0]),
-        static_cast<unsigned int>(info[1]),
-        static_cast<unsigned int>(info[2]),
-        static_cast<unsigned int>(info[3]),
+    __cpuidex(info, (int)(leaf), (int)(subleaf));
+    struct CpuidResult cpuid = {
+        (unsigned int)(info[0]),
+        (unsigned int)(info[1]),
+        (unsigned int)(info[2]),
+        (unsigned int)(info[3]),
     };
+    return cpuid;
 #else
-    CpuidResult info;
+    struct CpuidResult info;
     asm("cpuid\n\t"
         : "=a"(info.eax), "=b"(info.ebx), "=c"(info.ecx), "=d"(info.edx)
         : "0"(leaf), "2"(subleaf));
@@ -52,7 +53,7 @@ inline unsigned int cpuid_leaf1_ecx()
 }
 
 #if defined(__SSSE3__)
-inline constexpr bool has_ssse3() { return true; }
+inline const bool has_ssse3() { return true; }
 #else
 inline bool has_ssse3() { return (cpuid_leaf1_ecx() & (1 << 9)) != 0; }
 #endif
