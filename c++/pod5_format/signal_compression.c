@@ -7,16 +7,22 @@
 #include "svb16/decode.hpp"
 #include "svb16/encode.hpp"
 
+#ifdef VBZ_USE_ZSTD
 #include <zstd.h>
+#endif /* VBZ_USE_ZSTD */
 
 /*
  * Return the maximum VBZ compressed size given the number of 16-bit samples
  * sample_count.
  */
 size_t compressed_signal_max_size(size_t sample_count) {
+#ifdef VBZ_USE_ZSTD
     const uint32_t max_svb_size = svb16_max_encoded_length(sample_count);
     const size_t zstd_compressed_max_size = ZSTD_compressBound(max_svb_size);
     return zstd_compressed_max_size;
+#else
+    return 0;
+#endif /* VBZ_USE_ZSTD */
 }
 
 /*
@@ -29,6 +35,7 @@ uint8_t *compress_signal(
         uint32_t count, /* signal count shouldn't exceed 2^32 - 1 */
         size_t *n)
 {
+#ifdef VBZ_USE_ZSTD
     // First compress the data using svb:
     const uint32_t max_size = svb16_max_encoded_length(count) + sizeof count;
     uint8_t *intermediate = malloc(max_size);
@@ -72,6 +79,10 @@ uint8_t *compress_signal(
 
     *n = compressed_size;
     return destination;
+#else
+    *n = 0;
+    return NULL;
+#endif /* VBZ_USE_ZSTD */
 }
 
 /*
@@ -84,6 +95,7 @@ int16_t *decompress_signal(
         size_t count,
         uint32_t *n)
 {
+#ifdef VBZ_USE_ZSTD
     // First decompress the data using zstd:
     unsigned long long const decompressed_zstd_size =
             ZSTD_getFrameContentSize(compressed_bytes, count);
@@ -122,6 +134,10 @@ int16_t *decompress_signal(
     }
 
     return destination;
+#else
+    *n = 0;
+    return NULL;
+#endif /* VBZ_USE_ZSTD */
 }
 
 /*

@@ -1,6 +1,7 @@
 #ifndef SIGNAL_COMPRESSION_H
 #define SIGNAL_COMPRESSION_H
-#pragma once
+
+#include <stdint.h>
 
 /*
  * Return the maximum VBZ compressed size given the number of 16-bit samples

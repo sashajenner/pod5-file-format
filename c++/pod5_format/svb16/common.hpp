@@ -12,11 +12,13 @@
 #define SVB_RESTRICT __restrict__
 #endif
 
+#ifdef VBZ_ENABLE_SIMD
 #if defined(__x86_64__) || defined(_M_AMD64)  // x64
 #define SVB16_X64
 #elif defined(__arm__) || defined(__aarch64__)
 #define SVB16_ARM
 #endif
+#endif /* VBZ_ENABLE_SIMD */
 
 #ifndef __has_builtin
 #define __has_builtin(x) 0
